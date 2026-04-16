@@ -1,6 +1,6 @@
 ---
 name: deepclaw-voice
-description: Set up phone calling to OpenClaw using Deepgram Voice Agent API
+description: Set up phone calling or Discord voice to OpenClaw using Deepgram Voice Agent API
 requires:
   bins:
     - python3
@@ -10,14 +10,22 @@ requires:
 
 # deepclaw Voice Setup
 
-Use this skill when the user wants to call you on the phone, set up voice calling, or talk to OpenClaw via phone.
+Use this skill when the user wants to:
+- Call you on the phone
+- Talk to OpenClaw via Discord voice channels
+- Set up voice calling in general
 
 ## What This Sets Up
 
-Phone calls to OpenClaw using:
-- **Deepgram Voice Agent API** - STT, TTS, turn-taking, barge-in
-- **Twilio** - Phone number routing
+Voice conversations with OpenClaw using:
+- **Deepgram Voice Agent API** - STT, TTS, turn-taking, barge-in (phone calls)
+- **Deepgram Nova-2 / Aura-2** - STT and TTS for Discord voice channels
+- **Twilio** - Phone number routing (phone calls only)
 - **OpenClaw** - Your AI (via chat completions proxy)
+
+---
+
+## Option A: Phone Calling (Twilio)
 
 ## Setup Process
 
@@ -126,15 +134,83 @@ Watch the server logs for:
 
 ---
 
-## Customizing Voice
+## Option B: Discord Voice Channels
 
-Edit `~/deepclaw/deepclaw/voice_agent_server.py`, find `get_agent_config()`, change the `model` in `speak`:
+OpenClaw's Discord bot already handles joining/leaving voice channels and playing audio.
+deepclaw just needs to provide Deepgram as the STT and TTS provider.
 
-```python
-"speak": {"provider": {"type": "deepgram", "model": "aura-2-orion-en"}},
+**No new bot token is needed** — use the same Discord account OpenClaw already has configured.
+
+### Step 1: Get a Deepgram API Key (if not already done)
+
+1. Go to https://console.deepgram.com/
+2. Sign up (free $200 credit)
+3. **API Keys** → **Create API Key** → Name: "deepclaw", Full Access
+4. Copy key immediately
+
+Ask: "What's your Deepgram API key?"
+
+### Step 2: Configure Deepgram TTS in OpenClaw
+
+Open `~/.openclaw/openclaw.json` and add under the Discord channel entry:
+
+```json
+{
+  "channels": {
+    "discord": {
+      "voice": {
+        "enabled": true,
+        "tts": {
+          "provider": "deepgram",
+          "providers": {
+            "deepgram": {
+              "apiKey": "<their_deepgram_key>",
+              "model": "aura-2-thalia-en"
+            }
+          }
+        }
+      }
+    }
+  }
+}
 ```
 
-### Voice Options
+To also use Deepgram Nova-2 for speech-to-text (transcription), add:
+
+```json
+{
+  "mediaUnderstanding": {
+    "provider": "deepgram",
+    "providers": {
+      "deepgram": {
+        "apiKey": "<their_deepgram_key>"
+      }
+    }
+  }
+}
+```
+
+Restart the OpenClaw daemon to apply the changes:
+```bash
+openclaw daemon restart
+```
+
+### Step 3: Enable OpenClaw chat completions (optional — only needed if using LLM proxy)
+
+```bash
+openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+```
+
+### Step 4: Join a voice channel
+
+In Discord, use OpenClaw's built-in `/vc join` command to join a voice channel.
+OpenClaw will speak using Deepgram Aura-2 and transcribe with Nova-2.
+
+---
+
+## Customizing Voice
+
+### Voice Options (Aura-2)
 
 **English:** thalia (F, default), orion (M), apollo (M), athena (F), luna (F), zeus (M), draco (M, British), pandora (F, British), hyperion (M, Australian)
 
@@ -249,6 +325,26 @@ When something goes wrong, check the server logs first. Here's how to diagnose c
 ```bash
 ngrok http 8000 --domain=your-chosen-name.ngrok-free.app
 ```
+
+### Discord voice: no audio / bot is silent
+
+**Symptom:** The bot joins but doesn't speak.
+
+**Fix:**
+1. Verify `channels.discord.voice.tts.provider = "deepgram"` is set in `openclaw.json`
+2. Check that the `apiKey` in the deepgram provider config is correct
+3. Restart the OpenClaw daemon: `openclaw daemon restart`
+4. Check OpenClaw logs for TTS errors
+
+### Discord voice: bot speaks but doesn't hear you
+
+**Symptom:** TTS works but the bot never responds to speech.
+
+**Fix:**
+1. Check `mediaUnderstanding.provider` is set to `"deepgram"` (or ensure the default STT provider works)
+2. Verify `channels.discord.voice.enabled = true` in `openclaw.json`
+3. Make sure you are in the voice channel and not muted
+4. Check OpenClaw logs for transcription errors
 
 ### Still stuck?
 

@@ -31,124 +31,101 @@ Deepgram Flux understands *when you're done talking* semantically and acoustical
 
 ## Discord Voice Channels
 
-Don't want to pay for a phone number? deepclaw can join Discord voice channels instead.
-
-> **Note:** OpenClaw already handles Discord *text* natively through its built-in Discord extension. deepclaw adds *voice channel* support — your OpenClaw speaks and listens inside a voice channel, powered by the same Deepgram pipeline.
+Already have OpenClaw's Discord bot running? deepclaw doesn't need a second bot token — OpenClaw's built-in Discord extension already handles joining voice channels, capturing audio, and playing back speech. All you need to do is configure OpenClaw to use **Deepgram** for its STT and TTS, then run the deepclaw LLM proxy server as usual.
 
 ### How it works
 
+OpenClaw's Discord voice pipeline:
+
 ```
-Discord Voice Channel → deepclaw bot ←──WebSocket──→ Deepgram Voice Agent API
-                              │                      (Nova-2 STT + Aura-2 TTS)
-                              │
-                              ↓
-                         OpenClaw (LLM)
+Discord Voice Channel
+    │ Opus audio (captured by OpenClaw's Discord bot)
+    ▼
+OpenClaw – STT (Deepgram Nova-2)
+    │ transcript
+    ▼
+OpenClaw – LLM  ←──proxy──→  deepclaw /v1/chat/completions
+    │ text reply
+    ▼
+OpenClaw – TTS (Deepgram Aura-2)
+    │ audio
+    ▼
+Discord Voice Channel (played back by OpenClaw's bot)
 ```
 
-1. You run `/join` in your Discord server
-2. The bot joins your voice channel
-3. deepclaw streams your voice to Deepgram Voice Agent (48 kHz linear16, no resampling)
-4. Deepgram transcribes, calls OpenClaw for a response, and synthesizes speech
-5. The bot plays the reply back in the voice channel
-6. **Barge-in:** Start talking while the bot is responding — it stops immediately
-
-### Prerequisites
-
-- A [Discord Application with a Bot](https://discord.com/developers/applications)
-- [Deepgram account](https://console.deepgram.com/) (free $200 credit)
-- [OpenClaw](https://github.com/openclaw/openclaw) running locally with `chatCompletions` enabled
-- [ngrok](https://ngrok.com/) so Deepgram can reach the LLM proxy on your machine
+OpenClaw handles the entire Discord bot side (`/vc join`, `/vc leave`, audio capture, playback). deepclaw just runs the LLM proxy server, exactly the same as for phone calls.
 
 ### Quick start
 
-#### 1. Create a Discord bot
+#### 1. Configure Deepgram TTS in OpenClaw
 
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications) → **New Application**
-2. Navigate to **Bot** → **Add Bot**
-3. Under **Privileged Gateway Intents**, enable **Server Members Intent** and **Message Content Intent**
-4. Copy the **Token** — this is your `DISCORD_BOT_TOKEN`
-5. Under **OAuth2 → URL Generator**, select scopes `bot` + `applications.commands`
-   and permissions **Connect**, **Speak**, **Use Voice Activity**
-6. Open the generated URL to invite the bot to your server
+Edit `~/.openclaw/openclaw.json` and add a TTS configuration under your Discord channel entry:
 
-#### 2. Configure environment
-
-```bash
-cp .env.example .env
+```json
+{
+  "channels": {
+    "discord": {
+      "voice": {
+        "enabled": true,
+        "tts": {
+          "provider": "deepgram",
+          "providers": {
+            "deepgram": {
+              "apiKey": "your_deepgram_api_key",
+              "model": "aura-2-thalia-en"
+            }
+          }
+        }
+      }
+    }
+  }
+}
 ```
 
-Edit `.env`:
+If you want Deepgram Nova-2 for STT as well, set it in your OpenClaw media understanding config:
 
-```env
-DEEPGRAM_API_KEY=your_deepgram_api_key
-VOICE_PROVIDER=discord
-DISCORD_BOT_TOKEN=your_discord_bot_token
-PUBLIC_URL=https://your-ngrok-url.ngrok-free.app
-OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789
-OPENCLAW_GATEWAY_TOKEN=your_openclaw_gateway_token
+```json
+{
+  "mediaUnderstanding": {
+    "provider": "deepgram",
+    "providers": {
+      "deepgram": {
+        "apiKey": "your_deepgram_api_key"
+      }
+    }
+  }
+}
 ```
 
-#### 3. Enable OpenClaw chat completions
+#### 2. Enable OpenClaw chat completions
 
 ```bash
 openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 ```
 
-#### 4. Start the tunnel
+#### 3. Start the deepclaw LLM proxy
 
 ```bash
-ngrok http 8000
-```
-
-Copy the HTTPS URL (e.g. `https://abc123.ngrok-free.app`) into `PUBLIC_URL` in your `.env`.
-
-#### 5. Start deepclaw
-
-```bash
+cp .env.example .env
+# Set DEEPGRAM_API_KEY, OPENCLAW_GATEWAY_TOKEN in .env (same as phone setup)
 python -m deepclaw
 ```
 
-#### 6. Join a voice channel and call `/join`
+#### 4. Join a voice channel in Discord
 
-In Discord, join any voice channel and type `/join`. The bot will join you and say hello. Talk naturally — barge-in is supported.
+Use OpenClaw's built-in `/vc join` slash command to join a voice channel. OpenClaw will speak using Deepgram Aura-2 TTS and transcribe with Nova-2.
 
-When you're done, type `/leave`.
+### Customizing the voice
 
-### Discord voice architecture
+Change the `model` value in the TTS config in `openclaw.json`:
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                         Your Machine                             │
-│                                                                  │
-│  ┌─────────────┐   ┌───────────────┐   ┌──────────────────────┐  │
-│  │   Discord   │   │    deepclaw   │   │   OpenClaw Gateway   │  │
-│  │ Voice Chan  │──▶│  Discord Bot  │──▶│  /v1/chat/completions│  │
-│  │ (Opus 48kHz)│   └──────┬────────┘   └──────────────────────┘  │
-│  └─────────────┘          │ WebSocket                            │
-│         ▲                 ▼                                      │
-│         │       ┌─────────────────────┐                         │
-│         │       │  Deepgram Voice     │                         │
-│         └───────│  Agent API          │                         │
-│   TTS audio     │  • Nova-2 (STT)     │                         │
-│   (linear16     │  • Aura-2 (TTS)     │                         │
-│    48 kHz)      │  • Turn detection   │                         │
-│                 │  • Barge-in         │                         │
-│                 └─────────────────────┘                         │
-└──────────────────────────────────────────────────────────────────┘
-```
+| Voice | Style |
+|-------|-------|
+| `aura-2-thalia-en` | Feminine, American (default) |
+| `aura-2-orion-en` | Masculine, American |
+| `aura-2-draco-en` | Masculine, British |
 
-### Customising the Discord voice
-
-Edit `discord_voice_server.py`, find `get_agent_config()`, and change the `model` in `speak`:
-
-```python
-"speak": {
-    "provider": {
-        "type": "deepgram",
-        "model": "aura-2-orion-en",  # Change voice here
-    },
-},
-```
+See `skills/deepclaw-voice/SKILL.md` for the complete voice list.
 
 ## How It Works
 
