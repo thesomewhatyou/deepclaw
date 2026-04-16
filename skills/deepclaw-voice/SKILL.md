@@ -4,7 +4,6 @@ description: Set up phone calling or Discord voice to OpenClaw using Deepgram Vo
 requires:
   bins:
     - python3
-    - ngrok
     - git
 ---
 
@@ -98,13 +97,29 @@ Check their `~/.openclaw/openclaw.json` has:
 
 If not, add it and restart the gateway: `openclaw daemon restart`
 
-### Step 7: Start ngrok
+### Step 7: Expose the server publicly
+
+Deepgram needs to reach your `/v1/chat/completions` endpoint over HTTPS. Use any tunnel tool or deploy to a public server.
+
+Ask what they prefer, then run the appropriate command:
 
 ```bash
+# ngrok (most common — https://ngrok.com)
 ngrok http 8000
+
+# Cloudflare Tunnel (no account needed for one-off use)
+cloudflared tunnel --url http://localhost:8000
+
+# localtunnel (npm install -g localtunnel)
+lt --port 8000
+
+# Tailscale Funnel (if they already use Tailscale)
+tailscale funnel 8000
 ```
 
-Note the HTTPS URL (e.g., `https://abc123.ngrok-free.app`).
+Note the HTTPS URL that appears (e.g., `https://abc123.ngrok-free.app` or `https://xyz.trycloudflare.com`).
+
+If they have a public server, they can skip the tunnel and use that server's URL directly.
 
 ### Step 8: Configure Twilio Webhook
 
@@ -112,7 +127,7 @@ Note the HTTPS URL (e.g., `https://abc123.ngrok-free.app`).
 2. **Phone Numbers** → **Active Numbers** → Click their number
 3. **Voice Configuration**:
    - A Call Comes In: **Webhook**
-   - URL: `https://<ngrok-url>/twilio/incoming`
+   - URL: `https://<your-public-url>/twilio/incoming`
    - Method: **POST**
 4. Save
 
@@ -238,12 +253,12 @@ When something goes wrong, check the server logs first. Here's how to diagnose c
 
 **Symptom:** You call, phone hangs up, but no logs appear in the server terminal.
 
-**Cause:** Twilio webhook URL doesn't match your ngrok URL.
+**Cause:** Twilio webhook URL doesn't match your tunnel URL.
 
 **Fix:**
-1. Check your current ngrok URL in the ngrok terminal
+1. Check the current public URL your tunnel tool is showing
 2. Go to Twilio Console → Phone Numbers → Your Number → Voice Configuration
-3. Make sure the webhook URL matches exactly: `https://<your-ngrok-url>/twilio/incoming`
+3. Make sure the webhook URL matches exactly: `https://<your-public-url>/twilio/incoming`
 4. Save and try again
 
 ### "Check your think provider settings" error
@@ -255,12 +270,12 @@ When something goes wrong, check the server logs first. Here's how to diagnose c
 **Fix:**
 1. Test the proxy endpoint directly:
    ```bash
-   curl -X POST https://<your-ngrok-url>/v1/chat/completions \
+   curl -X POST https://<your-public-url>/v1/chat/completions \
      -H "Content-Type: application/json" \
      -d '{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}'
    ```
 2. If you get `401 Unauthorized`, the auth is blocking requests. This shouldn't happen with the latest code.
-3. If you get connection refused, the server isn't running or ngrok isn't forwarding.
+3. If you get connection refused, the server isn't running or the tunnel isn't forwarding.
 4. Check that OpenClaw gateway is running: `curl http://127.0.0.1:18789/health`
 
 ### Call works once then hangs up
@@ -285,7 +300,7 @@ When something goes wrong, check the server logs first. Here's how to diagnose c
 
 ### Inbound calls don't work, but everything else does
 
-**Symptom:** Server responds to curl, ngrok works, but calling from your phone gets immediate disconnect with no logs.
+**Symptom:** Server responds to curl, tunnel works, but calling from your phone gets immediate disconnect with no logs.
 
 **Cause:** Your carrier may be blocking calls to the Twilio number, or you're dialing wrong.
 
@@ -302,7 +317,7 @@ When something goes wrong, check the server logs first. Here's how to diagnose c
        data={
            'To': '+1YOURNUMBER',
            'From': '+1TWILIONUMBER',
-           'Url': 'https://<your-ngrok-url>/twilio/incoming'
+           'Url': 'https://<your-public-url>/twilio/incoming'
        }
    )
    ```
@@ -317,14 +332,14 @@ When something goes wrong, check the server logs first. Here's how to diagnose c
 2. Run `openclaw configure --section model` to set it up
 3. Restart OpenClaw gateway: `openclaw daemon restart`
 
-### ngrok URL keeps changing
+### Tunnel URL keeps changing
 
-**Symptom:** Every time you restart ngrok, you get a new URL and have to update Twilio.
+**Symptom:** Every time you restart the tunnel, you get a new URL and have to update Twilio.
 
-**Fix:** Use a fixed ngrok domain (requires ngrok account):
-```bash
-ngrok http 8000 --domain=your-chosen-name.ngrok-free.app
-```
+**Fix:** Use a stable URL:
+- **ngrok:** Fixed domains (requires free account): `ngrok http 8000 --domain=your-name.ngrok-free.app`
+- **Cloudflare Tunnel:** Named tunnels persist across restarts
+- **Public server:** Deploy deepclaw to any VPS/cloud host for a permanent URL
 
 ### Discord voice: no audio / bot is silent
 
@@ -351,7 +366,7 @@ ngrok http 8000 --domain=your-chosen-name.ngrok-free.app
 1. Check the server logs carefully—they usually tell you what's wrong
 2. Test each component individually:
    - Server health: `curl http://localhost:8000/health`
-   - ngrok forwarding: `curl https://<ngrok-url>/health`
+   - Tunnel forwarding: `curl https://<your-public-url>/health`
    - OpenClaw gateway: `curl http://127.0.0.1:18789/health`
-   - LLM proxy: `curl -X POST https://<ngrok-url>/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"gpt-4","messages":[{"role":"user","content":"test"}]}'`
+   - LLM proxy: `curl -X POST https://<your-public-url>/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"gpt-4","messages":[{"role":"user","content":"test"}]}'`
 3. Open an issue at https://github.com/deepgram/deepclaw/issues

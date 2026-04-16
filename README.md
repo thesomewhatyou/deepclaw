@@ -175,7 +175,12 @@ OpenClaw will walk you through:
   - [Twilio account](https://www.twilio.com/) with a phone number (~$1/month)
   - [Telnyx account](https://telnyx.com/) with a phone number (~$0.50-$2/month)
 - [OpenClaw](https://github.com/openclaw/openclaw) running locally
-- [ngrok](https://ngrok.com/) for exposing your local server
+- A way to expose your local server over HTTPS — any tunnel tool works:
+  - [ngrok](https://ngrok.com/) — easiest to get started
+  - [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) — free, no account needed for one-off use
+  - [localtunnel](https://theboroer.github.io/localtunnel-www/) — `npm install -g localtunnel`
+  - [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) — if you already use Tailscale
+  - A public server (VPS, cloud host) if you prefer not to use a tunnel
 
 ### 1. Clone and install
 
@@ -234,13 +239,25 @@ Or create the agent manually:
 openclaw agents add voice --model anthropic/claude-haiku-4-5-20251001
 ```
 
-### 4. Start the tunnel
+### 4. Expose the server publicly
+
+Deepgram needs to reach your `/v1/chat/completions` endpoint over HTTPS. Expose port 8000 with any tunnel tool, or deploy to a public server:
 
 ```bash
+# ngrok (https://ngrok.com)
 ngrok http 8000
+
+# Cloudflare Tunnel (no account needed)
+cloudflared tunnel --url http://localhost:8000
+
+# localtunnel
+lt --port 8000
+
+# Tailscale Funnel
+tailscale funnel 8000
 ```
 
-Note your ngrok URL (e.g., `https://abc123.ngrok-free.app`).
+Note the HTTPS URL shown (e.g., `https://abc123.ngrok-free.app` or `https://xyz.trycloudflare.com`). You'll use this as `PUBLIC_URL` in `.env` and in your phone provider's webhook configuration.
 
 ### 5. Configure Your Phone Provider
 
@@ -251,7 +268,7 @@ Note your ngrok URL (e.g., `https://abc123.ngrok-free.app`).
 3. Click your number
 4. Under "Voice Configuration":
    - Set "A Call Comes In" to **Webhook**
-   - URL: `https://your-ngrok-url.ngrok-free.app/twilio/incoming`
+   - URL: `https://your-public-url.example.com/twilio/incoming`
    - Method: **POST**
 5. Save
 
@@ -261,7 +278,7 @@ Note your ngrok URL (e.g., `https://abc123.ngrok-free.app`).
 2. Navigate to **Voice → Programmable Voice**
 3. Create a new **Voice API Application**:
    - **Application Name**: `deepclaw-voice`
-   - **Webhook URL**: `https://your-ngrok-url.ngrok-free.app/telnyx/webhook`
+   - **Webhook URL**: `https://your-public-url.example.com/telnyx/webhook`
    - **Webhook API Version**: `API v2` (recommended)
    - **Webhook Failover URL**: (optional) same as webhook URL
 4. Click **Create**
@@ -344,8 +361,8 @@ Be aware of these security considerations when using OpenClaw and deepclaw. Like
 
 **1. LLM proxy endpoint has no authentication**
 - The `/v1/chat/completions` endpoint is unauthenticated
-- Anyone who discovers your ngrok URL can use your OpenClaw/Anthropic API credits
-- **Mitigation:** Keep your ngrok URL private. Consider using a fixed ngrok domain.
+- Anyone who discovers your public URL can use your OpenClaw/Anthropic API credits
+- **Mitigation:** Keep your tunnel URL private. Use a fixed domain so you can rotate it if needed.
 
 **2. No Twilio signature validation**
 - Incoming webhook requests are not verified as coming from Twilio
@@ -355,14 +372,14 @@ Be aware of these security considerations when using OpenClaw and deepclaw. Like
 - API keys and tokens are stored in plaintext
 - **Mitigation:** The file is gitignored. Set restrictive permissions: `chmod 600 .env`
 
-**4. ngrok exposes your local machine**
-- Your server is accessible from the internet while running
-- **Mitigation:** Only run when needed. Use ngrok's IP allowlist on paid plans.
+**4. Tunnel exposes your local machine**
+- Your server is accessible from the internet while the tunnel is running
+- **Mitigation:** Only run when needed. Most tunnel tools support IP allowlists on paid plans.
 
 **For production deployments**, consider:
 - Adding Twilio signature validation
 - Running behind a reverse proxy with rate limiting
-- Using a dedicated server instead of ngrok
+- Deploying to a dedicated server instead of using a tunnel
 - Implementing proper authentication on the LLM proxy
 
 ## Known Limitations
