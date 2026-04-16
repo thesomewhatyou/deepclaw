@@ -196,7 +196,7 @@ pip install -e .
 cp .env.example .env
 ```
 
-Edit `.env` with your credentials:
+Edit `.env` with your credentials. `OPENCLAW_GATEWAY_URL` is OpenClaw's local HTTP gateway — it runs on port `18789` by default and stays on your machine (never exposed via tunnel).
 
 **For Twilio (default):**
 ```env
@@ -241,7 +241,7 @@ openclaw agents add voice --model anthropic/claude-haiku-4-5-20251001
 
 ### 4. Expose the server publicly
 
-Deepgram needs to reach your `/v1/chat/completions` endpoint over HTTPS. Expose port 8000 with any tunnel tool, or deploy to a public server:
+Deepgram needs to reach your `/v1/chat/completions` endpoint over HTTPS. Expose **port 8000** (deepclaw's server port) with any tunnel tool, or deploy to a public server. Port 18789 (OpenClaw) stays local — don't expose it.
 
 ```bash
 # ngrok (https://ngrok.com)
