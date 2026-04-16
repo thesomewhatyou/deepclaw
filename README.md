@@ -48,7 +48,7 @@ Discord Voice Channel → deepclaw bot ←──WebSocket──→ Deepgram Voic
 1. You run `/join` in your Discord server
 2. The bot joins your voice channel
 3. deepclaw streams your voice to Deepgram Voice Agent (48 kHz linear16, no resampling)
-4. Deepgram transcribes, calls OpenClaw for a response, and synthesises speech
+4. Deepgram transcribes, calls OpenClaw for a response, and synthesizes speech
 5. The bot plays the reply back in the voice channel
 6. **Barge-in:** Start talking while the bot is responding — it stops immediately
 
