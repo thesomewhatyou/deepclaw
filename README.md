@@ -1,6 +1,6 @@
 # deepclaw
 
-Call your OpenClaw over the phone using the [Deepgram Voice Agent API](https://developers.deepgram.com/docs/voice-agent).
+Talk to your OpenClaw over the phone **or** in a Discord voice channel using the [Deepgram Voice Agent API](https://developers.deepgram.com/docs/voice-agent).
 
 ## Why Deepgram?
 
@@ -28,6 +28,105 @@ Deepgram Flux understands *when you're done talking* semantically and acoustical
 **Recommendation:**
 - **Twilio**: Better for production apps with extensive docs and ecosystem
 - **Telnyx**: More cost-effective, simpler API, better for experimenting
+
+## Discord Voice Channels
+
+Already have OpenClaw's Discord bot running? deepclaw doesn't need a second bot token — OpenClaw's built-in Discord extension already handles joining voice channels, capturing audio, and playing back speech. All you need to do is configure OpenClaw to use **Deepgram** for its STT and TTS, then run the deepclaw LLM proxy server as usual.
+
+### How it works
+
+OpenClaw's Discord voice pipeline:
+
+```
+Discord Voice Channel
+    │ Opus audio (captured by OpenClaw's Discord bot)
+    ▼
+OpenClaw – STT (Deepgram Nova-2)
+    │ transcript
+    ▼
+OpenClaw – LLM  ←──proxy──→  deepclaw /v1/chat/completions
+    │ text reply
+    ▼
+OpenClaw – TTS (Deepgram Aura-2)
+    │ audio
+    ▼
+Discord Voice Channel (played back by OpenClaw's bot)
+```
+
+OpenClaw handles the entire Discord bot side (`/vc join`, `/vc leave`, audio capture, playback). deepclaw just runs the LLM proxy server, exactly the same as for phone calls.
+
+### Quick start
+
+#### 1. Configure Deepgram TTS in OpenClaw
+
+Edit `~/.openclaw/openclaw.json` and add a TTS configuration under your Discord channel entry:
+
+```json
+{
+  "channels": {
+    "discord": {
+      "voice": {
+        "enabled": true,
+        "tts": {
+          "provider": "deepgram",
+          "providers": {
+            "deepgram": {
+              "apiKey": "your_deepgram_api_key",
+              "model": "aura-2-thalia-en"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+If you want Deepgram Nova-2 for STT as well, set it in your OpenClaw media understanding config:
+
+```json
+{
+  "mediaUnderstanding": {
+    "provider": "deepgram",
+    "providers": {
+      "deepgram": {
+        "apiKey": "your_deepgram_api_key"
+      }
+    }
+  }
+}
+```
+
+#### 2. Enable OpenClaw chat completions (optional)
+
+This is only needed if you want to run deepclaw's LLM proxy alongside OpenClaw's voice pipeline (e.g., for markdown stripping). Skip if you want OpenClaw's built-in pipeline to handle everything directly.
+
+```bash
+openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+```
+#### 3. Start the deepclaw LLM proxy
+
+```bash
+cp .env.example .env
+# Set DEEPGRAM_API_KEY, OPENCLAW_GATEWAY_TOKEN in .env (same as phone setup)
+python -m deepclaw
+```
+
+#### 4. Join a voice channel in Discord
+
+Use OpenClaw's built-in `/vc join` slash command to join a voice channel. OpenClaw will speak using Deepgram Aura-2 TTS and transcribe with Nova-2.
+
+### Customizing the voice
+
+Change the `model` value in the TTS config in `openclaw.json`:
+
+| Voice | Style |
+|-------|-------|
+| `aura-2-thalia-en` | Feminine, American (default) |
+| `aura-2-orion-en` | Masculine, American |
+| `aura-2-draco-en` | Masculine, British |
+
+See `skills/deepclaw-voice/SKILL.md` for the complete voice list.
 
 ## How It Works
 
@@ -76,7 +175,12 @@ OpenClaw will walk you through:
   - [Twilio account](https://www.twilio.com/) with a phone number (~$1/month)
   - [Telnyx account](https://telnyx.com/) with a phone number (~$0.50-$2/month)
 - [OpenClaw](https://github.com/openclaw/openclaw) running locally
-- [ngrok](https://ngrok.com/) for exposing your local server
+- A way to expose your local server over HTTPS — any tunnel tool works:
+  - [ngrok](https://ngrok.com/) — easiest to get started
+  - [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) — free, no account needed for one-off use
+  - [localtunnel](https://theboroer.github.io/localtunnel-www/) — `npm install -g localtunnel`
+  - [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) — if you already use Tailscale
+  - A public server (VPS, cloud host) if you prefer not to use a tunnel
 
 ### 1. Clone and install
 
@@ -92,7 +196,7 @@ pip install -e .
 cp .env.example .env
 ```
 
-Edit `.env` with your credentials:
+Edit `.env` with your credentials. `OPENCLAW_GATEWAY_URL` is OpenClaw's local HTTP gateway — it runs on port `18789` by default and stays on your machine (never exposed via tunnel).
 
 **For Twilio (default):**
 ```env
@@ -135,13 +239,25 @@ Or create the agent manually:
 openclaw agents add voice --model anthropic/claude-haiku-4-5-20251001
 ```
 
-### 4. Start the tunnel
+### 4. Expose the server publicly
+
+Deepgram needs to reach your `/v1/chat/completions` endpoint over HTTPS. Expose **port 8000** (deepclaw's server port) with any tunnel tool, or deploy to a public server. Port 18789 (OpenClaw) stays local — don't expose it.
 
 ```bash
+# ngrok (https://ngrok.com)
 ngrok http 8000
+
+# Cloudflare Tunnel (no account needed)
+cloudflared tunnel --url http://localhost:8000
+
+# localtunnel
+lt --port 8000
+
+# Tailscale Funnel
+tailscale funnel 8000
 ```
 
-Note your ngrok URL (e.g., `https://abc123.ngrok-free.app`).
+Note the HTTPS URL shown (e.g., `https://abc123.ngrok-free.app` or `https://xyz.trycloudflare.com`). You'll use this as `PUBLIC_URL` in `.env` and in your phone provider's webhook configuration.
 
 ### 5. Configure Your Phone Provider
 
@@ -152,7 +268,7 @@ Note your ngrok URL (e.g., `https://abc123.ngrok-free.app`).
 3. Click your number
 4. Under "Voice Configuration":
    - Set "A Call Comes In" to **Webhook**
-   - URL: `https://your-ngrok-url.ngrok-free.app/twilio/incoming`
+   - URL: `https://your-public-url.example.com/twilio/incoming`
    - Method: **POST**
 5. Save
 
@@ -162,7 +278,7 @@ Note your ngrok URL (e.g., `https://abc123.ngrok-free.app`).
 2. Navigate to **Voice → Programmable Voice**
 3. Create a new **Voice API Application**:
    - **Application Name**: `deepclaw-voice`
-   - **Webhook URL**: `https://your-ngrok-url.ngrok-free.app/telnyx/webhook`
+   - **Webhook URL**: `https://your-public-url.example.com/telnyx/webhook`
    - **Webhook API Version**: `API v2` (recommended)
    - **Webhook Failover URL**: (optional) same as webhook URL
 4. Click **Create**
@@ -245,8 +361,8 @@ Be aware of these security considerations when using OpenClaw and deepclaw. Like
 
 **1. LLM proxy endpoint has no authentication**
 - The `/v1/chat/completions` endpoint is unauthenticated
-- Anyone who discovers your ngrok URL can use your OpenClaw/Anthropic API credits
-- **Mitigation:** Keep your ngrok URL private. Consider using a fixed ngrok domain.
+- Anyone who discovers your public URL can use your OpenClaw/Anthropic API credits
+- **Mitigation:** Keep your tunnel URL private. Use a fixed domain so you can rotate it if needed.
 
 **2. No Twilio signature validation**
 - Incoming webhook requests are not verified as coming from Twilio
@@ -256,14 +372,14 @@ Be aware of these security considerations when using OpenClaw and deepclaw. Like
 - API keys and tokens are stored in plaintext
 - **Mitigation:** The file is gitignored. Set restrictive permissions: `chmod 600 .env`
 
-**4. ngrok exposes your local machine**
-- Your server is accessible from the internet while running
-- **Mitigation:** Only run when needed. Use ngrok's IP allowlist on paid plans.
+**4. Tunnel exposes your local machine**
+- Your server is accessible from the internet while the tunnel is running
+- **Mitigation:** Only run when needed. Most tunnel tools support IP allowlists on paid plans.
 
 **For production deployments**, consider:
 - Adding Twilio signature validation
 - Running behind a reverse proxy with rate limiting
-- Using a dedicated server instead of ngrok
+- Deploying to a dedicated server instead of using a tunnel
 - Implementing proper authentication on the LLM proxy
 
 ## Known Limitations
