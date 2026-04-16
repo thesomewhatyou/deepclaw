@@ -97,12 +97,13 @@ If you want Deepgram Nova-2 for STT as well, set it in your OpenClaw media under
 }
 ```
 
-#### 2. Enable OpenClaw chat completions
+#### 2. Enable OpenClaw chat completions (optional)
+
+This is only needed if you want to run deepclaw's LLM proxy alongside OpenClaw's voice pipeline (e.g., for markdown stripping). Skip if you want OpenClaw's built-in pipeline to handle everything directly.
 
 ```bash
 openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 ```
-
 #### 3. Start the deepclaw LLM proxy
 
 ```bash

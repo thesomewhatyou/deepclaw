@@ -27,7 +27,7 @@ Voice conversations with OpenClaw using:
 
 ## Option A: Phone Calling (Twilio)
 
-## Setup Process
+### Setup Process
 
 ### Step 1: Clone the repo
 
